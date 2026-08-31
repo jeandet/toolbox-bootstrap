@@ -1,61 +1,96 @@
 # toolbox-bootstrap
 
-One-shot cozy env bootstrap for Fedora Toolbox (Silverblue).
+Cozy env for Fedora Silverblue + Toolbox.
 
-Home (`~`) survives `toolbox create` — the container rootfs does not. This script restores the container side in one go.
+`~` survives `toolbox create` — the container rootfs does not. Two scripts split along that boundary:
 
-## Quick start
+- **`setup-host.sh`** — host, `~`-shared, via **GitHub** (dotfiles, oh-my-zsh, p10k, nerd fonts). Run once per machine.
+- **`setup-toolbox.sh`** — container, **dnf** only (zsh + dev + qt + k8s + fpga). Run inside each new toolbox.
+
+No distrobox, no hotspot.
+
+## Quick start — new machine
 
 ```bash
-# New Fedora box
-toolbox create --distro fedora --release 43   # or 44
-toolbox enter
+git clone https://github.com/jeandet/toolbox-bootstrap ~/Documents/prog/toolbox-bootstrap
 
-# Inside the box
-~/Documents/prog/toolbox-bootstrap/setup-toolbox.sh
+# 1) Host — dotfiles + omz/p10k + MesloLGS NF (GitHub)
+~/Documents/prog/toolbox-bootstrap/setup-host.sh
+exec zsh   # or open new terminal; set terminal font to "MesloLGS NF"
+
+# 2) Toolbox — dnf packages
+toolbox create --distro fedora --release 43
+toolbox enter
+~/Documents/prog/toolbox-bootstrap/setup-toolbox.sh   # full by default
 exec zsh
 ```
 
-## Modes
+## setup-host.sh (host, GitHub)
 
-| Command | What it does |
-|---------|--------------|
-| `setup-toolbox.sh` | **Full by default** — shell + dev + Qt + k8s + FPGA + perf |
-| `setup-toolbox.sh --minimal` | Shell cozy only (zsh/omz/p10k, fzf/zoxide/bat/lsd, etc.) |
-| `setup-toolbox.sh --without-k8s` | Full minus podman/helm/kubectl |
-| `setup-toolbox.sh --without-fpga` | Full minus ARM/FPGA toolchain |
-| `setup-toolbox.sh --without-qt` | Skip Qt6 devel (uses `~/Qt` SDK if present) |
-| `setup-toolbox.sh --dry-run` | Print what would run, no changes |
-| `setup-toolbox.sh --update-toolchains` | Also `rustup update` + git pull oh-my-zsh/p10k |
+```bash
+setup-host.sh                  # install dotfiles + omz/p10k/plugins + MesloLGS NF
+setup-host.sh --dry-run        # preview
+setup-host.sh --without-fonts  # skip fonts
+setup-host.sh --update         # git pull omz/p10k + refresh fonts
+```
 
-Re-runnable — safe to run twice. Flags compose (e.g. `--without-k8s --without-fpga`).
+Installs:
 
-## What it installs
+- **dotfiles** `dotfiles/.zshrc` → `~/.zshrc`, `dotfiles/.p10k.zsh` → `~/.p10k.zsh`, `dotfiles/.zshenv` → `~/.zshenv` (backs up originals to `*.pre-toolbox-bootstrap`)
+- **oh-my-zsh** `ohmyzsh/ohmyzsh` → `~/.oh-my-zsh`
+- **powerlevel10k** `romkatv/powerlevel10k` → `~/.oh-my-zsh/custom/themes/powerlevel10k` (also handles legacy `~/.oh-my-zsh/themes/powerlevel10k`)
+- **plugins** `zsh-autosuggestions`, `zsh-syntax-highlighting` → `~/.oh-my-zsh/custom/plugins/`
+- **nerd fonts** MesloLGS NF (4 variants, p10k-recommended) via `romkatv/powerlevel10k-media` → `~/.local/share/fonts` + `fc-cache -f`
 
-Top-level packages only — `dnf` pulls deps, stays robust across releases.
+Re-runnable, previews with `--dry-run`, refuses to be confused with the toolbox.
 
-- **Shell cozy**: `zsh`, `fzf`, `zoxide`, `bat`, `lsd`, `thefuck`, `powerline`, `direnv`, `neovim`, `htop`/`btop`, `gh`/`meld`, `ruby` + `gem:colorls`
-- **Dev core**: `gcc`/`gcc-c++`/`clang`, `cmake`/`meson`/`ninja`, `python3-devel`/`pipx`, `fmt`/`spdlog`, `perf`/`strace`
-- **Qt6** (fallback if `~/Qt/6.11.1/gcc_64` missing): `qt6-qtbase/svg/tools/declarative-devel`
-- **K8s**: `podman`, `helm`, `kubernetes1.34-client` (provides `kubectl`)
+## setup-toolbox.sh (container, dnf)
+
+```bash
+setup-toolbox.sh                         # full by default
+setup-toolbox.sh --minimal               # shell dnf only (zsh + fzf/zoxide/bat/lsd/…)
+setup-toolbox.sh --without-k8s           # minus podman/helm/kubectl
+setup-toolbox.sh --without-fpga          # minus ARM/FPGA
+setup-toolbox.sh --without-qt            # skip Qt6 devel (uses ~/Qt SDK if present)
+setup-toolbox.sh --without-perf          # skip perf/strace
+setup-toolbox.sh --dry-run               # preview dnf transactions
+setup-toolbox.sh --update-toolchains     # (reserved)
+```
+
+Top-level dnf only — deps pulled automatically, robust across releases:
+
+- **Shell dnf**: `zsh`, `fzf`, `zoxide`, `bat`, `lsd`, `thefuck`, `powerline`, `direnv`, `neovim`, `htop`/`btop`, `gh`/`meld`, `ruby`
+- **Dev**: `gcc`/`clang`, `cmake`/`meson`/`ninja`, `python3-devel`/`pipx`, `fmt`/`spdlog`, `perf`/`strace`
+- **Qt6** (fallback if `~/Qt` missing): `qt6-qtbase/svg/tools/declarative-devel`
+- **K8s**: `podman`, `helm`, `kubernetes1.34-client`
 - **FPGA**: `arm-none-eabi-gcc-cs` (+c++, newlib), `openocd`, `dfu-util`, `yosys`
 
-Shell layer: clones/updates `oh-my-zsh`, `powerlevel10k`, `zsh-autosuggestions`, `zsh-syntax-highlighting` into `~/.oh-my-zsh/custom`. Your `~/.zshrc` + `~/.p10k.zsh` already persist in home — script never overwrites them.
+Re-runnable. Toolbox-aware (warns if run outside container).
 
-Home-persisted toolchains (`~/.cargo`, `~/.nvm`, `~/.local/bin/{uv,pixi,micromamba,meson,ninja}`) are verified, not reinstalled, unless missing.
+## Dotfiles
+
+Bundled in `dotfiles/`:
+
+- `.zshrc` — sanitized from your current config (`$HOME`-portable, guarded completions, `lsd`→`colorls` fallback)
+- `.p10k.zsh` — p10k rainbow (nerdfont-complete)
+- `.zshenv` — `. "$HOME/.cargo/env"`
+
+Edit them in-repo; `setup-host.sh` will deploy on next run.
 
 ## Verify
 
 ```bash
-zsh --version
+zsh --version; echo $ZSH_THEME
 meson --version; ninja --version; cmake --version
 kubectl version --client 2>/dev/null || kubectl --help | head -1
 arm-none-eabi-gcc --version; yosys -V | head -1
+fc-list | grep -i meslo | head
 ```
 
 ## Updating
 
 ```bash
 git -C ~/Documents/prog/toolbox-bootstrap pull
-~/Documents/prog/toolbox-bootstrap/setup-toolbox.sh --update-toolchains
+~/Documents/prog/toolbox-bootstrap/setup-host.sh --update
+~/Documents/prog/toolbox-bootstrap/setup-toolbox.sh
 ```

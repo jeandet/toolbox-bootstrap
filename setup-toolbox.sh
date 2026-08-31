@@ -3,7 +3,8 @@ set -euo pipefail
 
 # toolbox-bootstrap/setup-toolbox.sh
 # Idempotent cozy env bootstrap for Fedora Toolbox.
-# Full by default (shell + dev + qt + k8s + fpga + perf). Use --minimal for shell only.
+# Full by default (shell dnf + dev + qt + k8s + fpga + perf). Use --minimal for shell dnf only.
+# Home stuff (omz/p10k/dotfiles/fonts) is in setup-host.sh (host, via GitHub).
 # Top-level packages only — dnf pulls deps, stays robust across Fedora releases.
 
 DRY_RUN=false
@@ -29,11 +30,12 @@ Usage: setup-toolbox.sh [OPTIONS]
 
 Full by default (everything). Options to slim down:
 
-  --minimal              Shell cozy only (zsh/omz/p10k + CLI cosmetics)
+  --minimal              Shell dnf only (zsh + CLI tools; omz/p10k via setup-host.sh)
   --without-k8s          Skip podman/helm/kubectl
   --without-fpga         Skip ARM/FPGA toolchain (arm-none-eabi, openocd, yosys, etc.)
   --without-qt           Skip Qt6 devel packages (uses ~/Qt SDK if present)
   --without-perf         Skip perf/strace
+  (home stuff: use setup-host.sh on host — this script is dnf-only)
   --dry-run              Print what would run, don't mutate
   --update-toolchains    Also run rustup update / nvm checks
   --help                 This message
@@ -117,7 +119,7 @@ if ! sudo -n true 2>/dev/null; then
 fi
 
 # ── package lists (top-level only) ──────────────────────────────────────
-# Shell cozy — matches ~/.zshrc plugins + aliases (zsh/omz/p10k handled separately)
+# Shell dnf — zsh + CLI tools matching ~/.zshrc aliases (omz/p10k/dotfiles/fonts → setup-host.sh)
 SHELL_PKGS=(
   zsh
   git gh meld
@@ -205,66 +207,13 @@ else
   dnf_install "${FPGA_PKGS[@]}"
 fi
 
-# ── shell: oh-my-zsh / powerlevel10k / plugins ──────────────────────────
-ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-
-ensure_git_clone "https://github.com/ohmyzsh/ohmyzsh" "$HOME/.oh-my-zsh"
-# p10k may live in $ZSH/themes (old install) or $ZSH_CUSTOM/themes — handle both
-if [[ -d "$HOME/.oh-my-zsh/themes/powerlevel10k" ]] || [[ -d "$ZSH_CUSTOM/themes/powerlevel10k" ]]; then
-  ok "powerlevel10k already installed"
-  if [[ "$UPDATE_TOOLCHAINS" == true ]]; then
-    for d in "$HOME/.oh-my-zsh/themes/powerlevel10k" "$ZSH_CUSTOM/themes/powerlevel10k"; do
-      [[ -d "$d/.git" ]] && run "git -C \"$d\" pull --ff-only --quiet || true"
-    done
-  fi
-else
-  ensure_git_clone "https://github.com/romkatv/powerlevel10k" "$ZSH_CUSTOM/themes/powerlevel10k"
-fi
-ensure_git_clone "https://github.com/zsh-users/zsh-autosuggestions" "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
-ensure_git_clone "https://github.com/zsh-users/zsh-syntax-highlighting" "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-
-# kubectl-autocomplete is a local custom plugin in this dotfiles setup — ensure placeholder exists
-if [[ ! -d "$ZSH_CUSTOM/plugins/kubectl-autocomplete" ]]; then
-  warn "custom plugin kubectl-autocomplete not found at $ZSH_CUSTOM/plugins/kubectl-autocomplete — skipping"
-fi
-
-# Verify ~/.zshrc and ~/.p10k.zsh persist (home survives toolbox recreation)
-if [[ -f "$HOME/.zshrc" ]]; then ok "~/.zshrc present"; else warn "~/.zshrc missing — restore from backup"; fi
-if [[ -f "$HOME/.p10k.zsh" ]]; then ok "~/.p10k.zsh present"; else warn "~/.p10k.zsh missing — run p10k configure"; fi
-if [[ -f "$HOME/.zshenv" ]]; then ok "~/.zshenv present"; fi
-
-# Default shell — toolbox /etc/passwd is often read-only; warn instead of fail
-if [[ "${SHELL:-}" != *"zsh"* ]]; then
-  if have_cmd zsh; then
-    log "setting default shell to zsh (may fail inside toolbox — safe to ignore)"
-    run "chsh -s \"\$(which zsh)\" 2>/dev/null || true"
-    # Toolbox alternative: ensure toolbox.ini or host config launches zsh
-    if ! is_toolbox; then
-      warn "chsh may not persist inside toolbox — launch with: toolbox enter -- zsh"
-    fi
-  fi
-fi
-
-# ── gems / cargo / nvm (home-persisted, just ensure presence) ──────────
-ensure_gem colorls
-
-if have_cmd cargo || [[ -f "$HOME/.cargo/bin/cargo" ]]; then
-  ok "cargo present ($HOME/.cargo/bin/cargo)"
-  [[ "$UPDATE_TOOLCHAINS" == true ]] && run "rustup update || true"
-else
-  log "installing rustup (cargo missing)"
-  run "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path"
-  warn "rustup installed — restart shell or: source \$HOME/.cargo/env"
-fi
-
-if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
-  ok "nvm present"
-else
-  warn "nvm not found at ~/.nvm/nvm.sh — install from https://github.com/nvm-sh/nvm if needed"
-fi
-
+# ── home is host-managed — nothing to do here ──────────────────────────
+# omz / p10k / plugins / dotfiles / nerdfonts / cargo / nvm are installed
+# via setup-host.sh on the HOST (home persists across toolbox resets).
+# This script only installs dnf packages inside the container.
+if [[ -f "$HOME/.zshrc" ]]; then ok "~/.zshrc present (host-managed)"; else warn "~/.zshrc missing — run setup-host.sh on host"; fi
 for bin in uv pixi micromamba meson ninja; do
-  if have_cmd "$bin"; then ok "$bin on PATH"; else warn "$bin not on PATH — check ~/.local/bin"; fi
+  if have_cmd "$bin"; then ok "$bin on PATH"; else warn "$bin not on PATH — check ~/.local/bin (host)"; fi
 done
 
 # ── summary ──────────────────────────────────────────────────────────────
